@@ -1,17 +1,65 @@
 # Flipt Client Go
 
-[![Client tag](https://img.shields.io/github/v/tag/flipt-io/flipt-client-go?label=latest)](https://github.com/flipt-io/flipt-client-go)
+[![Client tag](https://img.shields.io/github/v/tag/flipt-io/flipt-client-go?filter=v*&label=flipt-client-go)](https://github.com/flipt-io/flipt-client-go)
+[![Client tag (musl)](https://img.shields.io/github/v/tag/flipt-io/flipt-client-go?filter=musl-v*&label=flipt-client-go-musl)](https://github.com/flipt-io/flipt-client-go)
+[![Go Reference](https://pkg.go.dev/badge/go.flipt.io/flipt-client.svg)](https://pkg.go.dev/go.flipt.io/flipt-client)
 
 > [!NOTE]
-> This is a read-only repository used to house the release of the `flipt-client-go` library due to how Go modules works. Please open any issues regarding the library in the [flipt-client-sdks](https://github.com/flipt-io/flipt-client-sdks/) repository.
+> This is a read-only repository that houses the release of the `flipt-client-go` library due to how Go modules work. Please open any issues regarding the library in the [flipt-client-sdks](https://github.com/flipt-io/flipt-client-sdks/) repository.
 
-The `flipt-client-go` directory contains the Go source code for the Flipt [client-side evaluation](https://www.flipt.io/docs/integration/client) client.
+The `flipt-client-go` library contains the Go source code for the Flipt [client-side evaluation](https://www.flipt.io/docs/integration/client) client.
 
 ## Installation
 
 ```bash
 go get go.flipt.io/flipt-client
 ```
+
+## How Does It Work?
+
+The `flipt-client-go` library is a wrapper around the [flipt-engine-ffi](https://github.com/flipt-io/flipt-client-sdks/tree/main/flipt-engine-ffi) library.
+
+All evaluation happens within the SDK, using the shared library built from the [flipt-engine-ffi](https://github.com/flipt-io/flipt-client-sdks/tree/main/flipt-engine-ffi) library.
+
+Because the evaluation happens within the SDK, the SDKs can be used in environments where the Flipt server is not available or reachable after the initial data is fetched.
+
+## Data Fetching
+
+Upon instantiation, the `flipt-client-go` library will fetch the flag state from the Flipt server and store it in memory. This means that the first time you use the SDK, it will make a request to the Flipt server.
+
+### Polling (Default)
+
+By default, the SDK will poll the Flipt server for new flag state at a regular interval. This interval can be configured using the `WithUpdateInterval` option when constructing a client. The default interval is 120 seconds.
+
+### Streaming (Flipt Cloud Only)
+
+[Flipt Cloud](https://flipt.io/cloud) users can use the `streaming` fetch method to stream flag state changes from the Flipt server to the SDK.
+
+When in streaming mode, the SDK will connect to the Flipt server and open a persistent connection that will remain open until the client is closed. The SDK will then receive flag state changes in real-time.
+
+## Supported Architectures
+
+This SDK currently supports the following OSes/architectures:
+
+- Linux x86_64
+- Linux x86_64 (musl)
+- Linux arm64
+- Linux arm64 (musl)
+- MacOS x86_64
+- MacOS arm64
+- Windows x86_64
+
+### Glibc vs Musl
+
+Most Linux distributions use [Glibc](https://en.wikipedia.org/wiki/Glibc), but some distributions like Alpine Linux use [Musl](https://en.wikipedia.org/wiki/Musl). If you are using Alpine Linux, you will need to install the `musl` tagged version of the client.
+
+Example:
+
+```bash
+go install go.flipt.io/flipt-client@musl-v0.0.1
+```
+
+See [flipt-client-sdks #141](https://github.com/flipt-io/flipt-client-sdks/issues/141) for more information.
 
 ## Usage
 
@@ -29,12 +77,7 @@ import (
 )
 
 func main() {
-  // The NewClient() accepts options which are the following:
-  // flipt.WithNamespace(string): configures which namespace you will be making evaluations on
-  // flipt.WithURL(string): configures which upstream Flipt data should be fetched from
-  // flipt.WithUpdateInterval(int): configures how often data should be fetched from the upstream
-  // flipt.WithAuthToken(string): configures an auth token if your upstream Flipt instance requires it
-  evaluationClient, err := flipt.NewClient()
+  evaluationClient, err := flipt.NewEvaluationClient()
   if err != nil {
     log.Fatal(err)
   }
@@ -49,9 +92,28 @@ func main() {
     log.Fatal(err)
   }
 
-  fmt.Println(*variantResult.Result)
+  fmt.Println(*variantResult)
 }
 ```
+
+### Client Options
+
+The `NewClient` constructor accepts a variadic number of `ClientOption` functions that can be used to configure the client. The available options are:
+
+- `WithNamespace`: The namespace to fetch flag state from. If not provided, the client will default to the `default` namespace.
+- `WithURL`: The URL of the upstream Flipt instance. If not provided, the client will default to `http://localhost:8080`.
+- `WithUpdateInterval`: The interval (in seconds) in which to fetch new flag state. If not provided, the client will default to 120 seconds.
+- `With{Method}Authentication`: The authentication strategy to use when communicating with the upstream Flipt instance. If not provided, the client will default to no authentication. See the [Authentication](#authentication) section for more information.
+- `WithReference`: The [reference](https://docs.flipt.io/guides/user/using-references) to use when fetching flag state. If not provided, reference will not be used.
+- `WithFetchMode`: The fetch mode to use when fetching flag state. If not provided, the client will default to polling.
+
+### Authentication
+
+The `Client` supports the following authentication strategies:
+
+- No Authentication (default)
+- [Client Token Authentication](https://docs.flipt.io/authentication/using-tokens)
+- [JWT Authentication](https://docs.flipt.io/authentication/using-jwts)
 
 ## Memory Management
 
@@ -62,3 +124,11 @@ The engine that is allocated on the Rust side to compute evaluations for flag st
 ```go
 defer evaluationClient.Close()
 ```
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a Pull Request in the [flipt-client-sdks](https://github.com/flipt-io/flipt-client-sdks/) repository.
+
+## License
+
+This project is licensed under the MIT License.
