@@ -1,7 +1,6 @@
 # Flipt Client Go
 
 [![Client tag](https://img.shields.io/github/v/tag/flipt-io/flipt-client-go?filter=v*&label=flipt-client-go)](https://github.com/flipt-io/flipt-client-go)
-[![Client tag (musl)](https://img.shields.io/github/v/tag/flipt-io/flipt-client-go?filter=musl-v*&label=flipt-client-go-musl)](https://github.com/flipt-io/flipt-client-go)
 [![Go Reference](https://pkg.go.dev/badge/go.flipt.io/flipt-client.svg)](https://pkg.go.dev/go.flipt.io/flipt-client)
 
 > [!NOTE]
@@ -17,9 +16,11 @@ go get go.flipt.io/flipt-client
 
 ## How Does It Work?
 
-The `flipt-client-go` library is a wrapper around the [flipt-engine-ffi](https://github.com/flipt-io/flipt-client-sdks/tree/main/flipt-engine-ffi) library.
+The `flipt-client-go` library is a wrapper around the [flipt-engine-wasm](https://github.com/flipt-io/flipt-client-sdks/tree/main/flipt-engine-wasm) library.
 
-All evaluation happens within the SDK, using the shared library built from the [flipt-engine-ffi](https://github.com/flipt-io/flipt-client-sdks/tree/main/flipt-engine-ffi) library.
+All evaluation happens within the SDK, using the shared library built from the [flipt-engine-wasm](https://github.com/flipt-io/flipt-client-sdks/tree/main/flipt-engine-wasm) library.
+
+We use the [Wazero](https://github.com/tetratelabs/wazero) library to load the WASM module and call the functions that are exported from the module. Wazero implements a WebAssembly runtime for Go without the need for using CGO.
 
 Because the evaluation happens within the SDK, the SDKs can be used in environments where the Flipt server is not available or reachable after the initial data is fetched.
 
@@ -42,24 +43,10 @@ When in streaming mode, the SDK will connect to the Flipt server and open a pers
 This SDK currently supports the following OSes/architectures:
 
 - Linux x86_64
-- Linux x86_64 (musl)
 - Linux arm64
-- Linux arm64 (musl)
 - MacOS x86_64
 - MacOS arm64
 - Windows x86_64
-
-### Glibc vs Musl
-
-Most Linux distributions use [Glibc](https://en.wikipedia.org/wiki/Glibc), but some distributions like Alpine Linux use [Musl](https://en.wikipedia.org/wiki/Musl). If you are using Alpine Linux, you will need to install the `musl` tagged version of the client.
-
-Example:
-
-```bash
-go install go.flipt.io/flipt-client@musl-v0.0.1
-```
-
-See [flipt-client-sdks #141](https://github.com/flipt-io/flipt-client-sdks/issues/141) for more information.
 
 ## Usage
 
@@ -77,7 +64,7 @@ import (
 )
 
 func main() {
-  evaluationClient, err := flipt.NewEvaluationClient()
+  evaluationClient, err := flipt.NewEvaluationClient(context.Background())
   if err != nil {
     log.Fatal(err)
   }
@@ -106,6 +93,7 @@ The `NewClient` constructor accepts a variadic number of `ClientOption` function
 - `With{Method}Authentication`: The authentication strategy to use when communicating with the upstream Flipt instance. If not provided, the client will default to no authentication. See the [Authentication](#authentication) section for more information.
 - `WithReference`: The [reference](https://docs.flipt.io/guides/user/using-references) to use when fetching flag state. If not provided, reference will not be used.
 - `WithFetchMode`: The fetch mode to use when fetching flag state. If not provided, the client will default to polling.
+- `WithErrorStrategy`: The error strategy to use when fetching flag state. If not provided, the client will default to `Fail`. See the [Error Strategies](#error-strategies) section for more information.
 
 ### Authentication
 
@@ -115,14 +103,34 @@ The `Client` supports the following authentication strategies:
 - [Client Token Authentication](https://docs.flipt.io/authentication/using-tokens)
 - [JWT Authentication](https://docs.flipt.io/authentication/using-jwts)
 
+### Error Strategies
+
+The `Client` supports the following error strategies:
+
+- `Fail`: The client will return an error for any method calls if the flag state cannot be fetched. This is the default behavior.
+- `Fallback`: The client will maintain the last known good state and use that state for evaluation in case of an error.
+
+### `Err` Method
+
+The `Err` method can be used to check the last error that occurred regardless of the error strategy. This allows you to handle errors in a more flexible way and decide what to do based on the error.
+
+```go
+err := evaluationClient.Err()
+if err != nil {
+  log.Fatal(err)
+}
+```
+
+In the case of non-fetch related errors, the client will stop polling or streaming for flag state changes and return the error for all subsequent method calls.
+
 ## Memory Management
 
-The engine that is allocated on the Rust side to compute evaluations for flag state will not be properly deallocated unless you call the `Close()` method on a `Client` instance.
+The engine that is allocated on the WASM side to compute evaluations for flag state will not be properly deallocated unless you call the `Close()` method on a `Client` instance.
 
 **Please be sure to do this to avoid leaking memory!**
 
 ```go
-defer evaluationClient.Close()
+defer evaluationClient.Close(context.Background())
 ```
 
 ## Contributing
